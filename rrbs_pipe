@@ -1,0 +1,44 @@
+#!/bin/bash
+# rrbs analysis pipeline, created by Giulia De Riso in 08/31/2021
+# the script can be used to automate the preprocessing and epiallele analysis of se rrbs data
+# this script expects as input a list of fasq.gz files placed in the same directory, named as <sample>.fastq.gz
+# downloading the files is up to the user
+### to download all the files of a project from sra, use the following command 
+### for se data: esearch -db sra -query <project accession>  | efetch --format runinfo | cut -d ',' -f 1 | grep SRR | xargs -n 1 -P 12 fastq-dump --gzip --skip-technical
+### for pe data: esearch -db sra -query $prj  | efetch --format runinfo | cut -d ',' -f 1 | grep SRR | xargs -n 1 -P 12 fastq-dump --split-files --gzip --skip-technical
+# before to start the script, start a screen session by running screen -S <screen name>, and start the conda environment by running conda activate rrbs_env
+################################################################################################################
+####### env variables
+wd=''
+outdir=''
+cores=30
+group='cocozza_lab'
+genomeDir=''
+################################################################################################################
+####### main
+cd ${wd}
+mkdir ${wd}${out}
+for file in *.gz; do
+    sample=$(echo "$file" | cut -f 1 -d '.')
+    mkdir $sample
+    mv $file ./$sample
+    cd $sample
+    #trimming+fastqc trimmed
+    trim_galore --fastqc --rrbs "${sample}".fastq.gz
+    sort_trim=$!
+    wait $sort_trim
+    #alignment
+    bismark --multicore $cores $genomeDir "${sample}"_trimmed.fq.gz
+    sort_algn=$!
+    wait $sort_algn
+    #sort
+    samtools sort -@ $cores "${sample}"_trimmed_bismark_bt2.bam -o "${sample}"_sorted.bam
+    sort_sort=$!
+    wait $sort_sort
+    samtools index "${sample}"_sorted.bam
+    sort_index=$!
+    wait $sort_index
+    mv "${sample}"_sorted.bam "${sample}"_sorted.bam.bai ${wd}${out}
+    cd .. 
+done
+multiqc .
